@@ -1,4 +1,4 @@
 googlemaps >= 4.10.0
-fastmcp >= 2.8.1
+fastmcp >= 2.9.0
 mcp >= 1.9.4
 asyncio == 3.4.3

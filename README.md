@@ -1,4 +1,6 @@
 # Google Maps Platform MCP server
+This uses the [googlemaps](https://github.com/googlemaps/google-maps-services-python) Python package (which hasn't been updated since 2023, but does appear to still be active)
+- [documentation](https://googlemaps.github.io/google-maps-services-python/docs/index.html)
 
 ## Setup
 For this example, you will need a Google Maps Platform API key.  I restricted my APIs to the following:
@@ -21,3 +23,45 @@ You can substitute `stdio` with `streaming-http` or `sse` (deprecated) depending
 
 
 **NOTE:** if you use the `fastmcp` option, it ignores the `if __name__ == "__main__"`, so you need to pass `--transport` and any other settings you wish to override.
+
+
+## How to use/connect
+### Agent Development Kit (ADK)
+```python
+maps_agent = LlmAgent(
+    name="maps_agent",
+    model=model,
+    instruction=(
+        "You are an AI Google Maps assistant. Your primary function is to find places that meet the user's criteria. Include with your findings the name of the place, its rating, and its address. Limit the results to a maximum of 10. Use only the tools provided to you."
+    ),
+    tools=[
+        MCPToolset(
+            connection_params=StdioServerParameters(
+                command='fastmcp',
+                args=[
+                    "run",
+                    "maps_agent/server.py"
+                ],
+                env={
+                    "GOOGLE_MAPS_API_KEY": google_maps_api_key
+                },
+            ),
+            #tool_filter=['tool1', 'tool2']
+        )
+
+    ],
+)
+```
+
+And here's a more detailed prompt example I give my agent:
+```
+MAPS_AGENT_PROMPT="""
+System Role: You are an AI Google Maps assistant. Your primary function is to find places that meet the user's criteria. You achieve this by finding a list of places within a 5km radius of the user's location unless otherwise specified. Include with your findings the name of the place, its rating, and its address. Limit the results to a maximum of 10.
+
+When asked for directions, provide the route we will be travelling via, total distance, total time and step-by-step directions in a list format.
+
+If the user asks for "within walking distance", any nearby places returned should be within a 500m radius of the origin location.
+
+Use only the tools provided to you.
+"""
+```

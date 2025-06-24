@@ -26,25 +26,15 @@ allowed_modes = ["driving", "walking", "bicycling", "transit"]
 def assert_mode(mode: str):
     assert mode in allowed_modes, f"ERROR: '{mode}' is not one of the allowed modes: {allowed_modes}"
 
-
 allowed_input_types = ["textquery", "phonenumber"]
 def assert_input_type(input_type: str):
     assert input_type in allowed_input_types, f"ERROR: '{input_type}' is not one of the allowed inpute types: {allowed_input_types}"
 
 
-def strip_html_regex(html_text: str) -> str:
-    """Strips HTML tags and reduce multiple blank spaces to one"""
-    clean = re.compile('<.*?>')
-    temp = re.sub(clean, ' ', html_text)
-    final = re.sub(r' {2,}', ' ', temp)
-    return final
-
-
-#------------------
+#-----------------------
 # initialize fastmcp
-#------------------
+#-----------------------
 # https://gofastmcp.com/servers/fastmcp#server-configuration
-# Initialize FastMCP server
 mcp = FastMCP(
     name="FastMCP Google Maps Platform Server",
     dependencies=["googlemaps==4.10.0", "asyncio==3.4.3"],
@@ -56,7 +46,7 @@ mcp = FastMCP(
 # direction tools
 #-------------------
 @mcp.tool()
-def get_directions(origin: str, destination: str, mode: str="driving") -> Optional[Dict[str, Any]]:
+async def get_directions(origin: str, destination: str, mode: str="driving") -> Optional[Dict[str, Any]]:
     """Gives step-by-step instructions to get from origin to destination uisng a particular mode of transport
     Args:
         origin (str): originating address
@@ -71,35 +61,94 @@ def get_directions(origin: str, destination: str, mode: str="driving") -> Option
     except AssertionError as e:
         print(e)
 
-    results = gmaps.directions(origin, destination, mode=mode)
+    results = gmaps.directions(origin, destination, mode)
 
     if results:
-        route = results[0]
+        shortest_route = results[0]
 
         output = {
-            "total_distance": route['legs'][0]['distance']['text'],
-            "total_duration": route['legs'][0]['duration']['text'],
+            "summary": shortest_route['summary'],
+            "total_distance": shortest_route['legs'][0]['distance']['text'],
+            "total_duration": shortest_route['legs'][0]['duration']['text'],
             "steps": []
         }
 
-        for leg in route['legs']:
+        for leg in shortest_route['legs']:
             for step in leg['steps']:
                 output["steps"].append({
-                    "instruction": strip_html_regex(step['html_instructions']),
+                    "instruction": step['html_instructions'],
                     "distance": step['distance']['text'],
                     "duration": step['duration']['text']
                 })
-        #return json.dumps(output, indent=4)
+        return json.dumps(output, separators=(',', ':'))
+    else:
+        return "No directions found for the specified locations."
+
+
+#--------------------------
+# distance matrix tools
+#--------------------------
+@mcp.tool()
+async def get_distance(origin: str, destination: str, mode: str="driving") -> Optional[Dict[str, Any]]:
+    """Finds the distance and travel time between two locations
+    Args:
+        origin (str): originating address
+        destination (str): destination address
+
+    Returns:
+        dictionary (JSON) of total distance and total travel time duration
+    """
+    try:
+        assert_mode(mode)
+    except AssertionError as e:
+        print(e)
+
+    results = gmaps.distance_matrix(origin, destination, mode)
+
+    if results:
+        shortest_distance = results.get('rows', {})[0]
+
+        output = {
+            "total_distance": shortest_distance['elements'][0]['distance']['text'],
+            "total_duration": shortest_distance['elements'][0]['duration']['text'],
+        }
         return json.dumps(output, separators=(',', ':'))
     else:
         return "No directions found for the specified locations."
 
 
 #-------------------
+# geocoding tools
+#-------------------
+@mcp.tool()
+async def get_geocode(address: str) -> Optional[Dict[str, Any]]:
+    """
+    Args:
+        address (str): can be address or the name of a place
+
+    Returns:
+        dictionary (JSON) with the geocode (latitude & longitude) of the address
+    """
+    results = gmaps.geocode(address)
+
+    if results:
+        geocode = results[0]
+
+        output = {
+            "lat": geocode['geometry']['location']['lat'],
+            "lng": geocode['geometry']['location']['lng'],
+        }
+
+        return json.dumps(output, separators=(',', ':'))
+    else:
+        return "Address not found"
+
+
+#-------------------
 # places tools
 #-------------------
 @mcp.tool()
-def find_place(input: str, input_type: str="textquery", fields: list=["place_id", "formatted_address", "name", "geometry", "types", "rating"]) -> Optional[Dict[str, Any]]:
+async def find_place(input: str, input_type: str="textquery", fields: list=["place_id", "formatted_address", "name", "geometry", "types", "rating"]) -> Optional[Dict[str, Any]]:
     """Find/query a place with the provided name
     Args:
         input (str): name of the place you're looking for. provide more details if possible (i.e. city, country, etc.) for better accuracy. can also be the establishment type (i.e. bakery, bank, etc.)
@@ -140,7 +189,7 @@ def find_place(input: str, input_type: str="textquery", fields: list=["place_id"
 
 
 @mcp.tool()
-def place_nearby(location: dict, radius: int, place_type: str) -> Optional[Dict[str, Any]]:
+async def place_nearby(location: dict, radius: int, place_type: str) -> Optional[Dict[str, Any]]:
     """Find types of places within a radius of a location (latitude, longitude)
     Args:
         location (dict): dictionary with 'lat' and 'lng' as keys and values are the latitude and longitude respectively
@@ -155,14 +204,12 @@ def place_nearby(location: dict, radius: int, place_type: str) -> Optional[Dict[
 
     if results:
         places_nearby = results.get('results', {})
-        #print(f"{len(places_nearby)} results were found")
 
         for place in range(len(places_nearby)):
             place_name = places_nearby[place]['name']
             place_id = places_nearby[place]['place_id']
 
             output[place_name] = place_id
-            #print(place_details(output[place_name]))
 
         return json.dumps(output, separators=(',', ':'))
     else:
@@ -170,7 +217,7 @@ def place_nearby(location: dict, radius: int, place_type: str) -> Optional[Dict[
 
 
 @mcp.tool()
-def place_details(place_id: str, fields: list=["name", "formatted_address", "formatted_phone_number", "geometry", "website", "types", "rating", "user_ratings_total"]) -> Optional[Dict[str, Any]]:
+async def place_details(place_id: str, fields: list=["name", "formatted_address", "formatted_phone_number", "website", "types", "rating", "user_ratings_total"]) -> Optional[Dict[str, Any]]:
     """
     Args:
         place_id (str): place_id of the place, which can be obtained via find_place() or place_nearby()
@@ -180,7 +227,6 @@ def place_details(place_id: str, fields: list=["name", "formatted_address", "for
         dictionary (JSON) of with details of provided place. details inclulde:
         - name
         - address
-        - location (latitude, longitude)
         - phone number
         - website
         - establishment type
@@ -195,7 +241,6 @@ def place_details(place_id: str, fields: list=["name", "formatted_address", "for
         output = {
             "name": place_details['name'],
             "formatted_address": place_details['formatted_address'],
-            "location": place_details['geometry']['location'],
             "formatted_phone_number": place_details.get('formatted_phone_number', None),
             "website": place_details.get('website', None),
             "types": place_details['types'],
