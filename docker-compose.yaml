@@ -1,0 +1,17 @@
+services:
+
+  google-maps-mcp-server:
+    build:
+      context: ./
+      dockerfile: ./Dockerfile
+    restart: "always"
+    environment:
+      TZ: Asia/Shanghai
+      FASTMCP_TRANSPORT: streamable-http
+      GOOGLE_MAPS_API_KEY: AIzaSyAHeptM2bGXfs6R4WuyF2cI4rMHDgu1o45
+    volumes:
+      - ./:/app
+    working_dir: /app
+    ports:
+      - 9058:8080
+    entrypoint: python server.py
